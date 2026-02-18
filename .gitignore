@@ -1,0 +1,19 @@
+# Environment Variables (Sensitive)
+.env
+.env.local
+
+# Data & Logs (Do not push)
+processed_domains.csv
+*.xlsx
+*.xls
+automation.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/

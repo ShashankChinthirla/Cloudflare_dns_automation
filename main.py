@@ -171,16 +171,24 @@ def process_domain(client, zone, processed_set, mongo_client=None, dry_run=True)
                 comment="Updated by Automation"
             )
             if success:
-                # IMMEDIATE VERIFICATION
-                verification_records = client.get_dns_records(zone_id, "TXT")
-                if verification_records is None:
-                    res_details['spf status'] = "Updated (Verification Failed - API Timeout)"
-                    logger.warning(f"⚠️ SPF Verification skipped for {domain} due to API Timeout.")
-                else:
-                    match = next((r for r in verification_records if r['id'] == existing_id), None)
-                    if match and match['content'] == new_spf:
-                        res_details['spf status'] = "Updated"
-                        logger.info(f"✅ SPF Verified and Tagged for {domain}")
+                # IMMEDIATE VERIFICATION WITH RETRY
+                verified = False
+                for attempt in range(3):
+                    time.sleep(2) # Wait for propagation
+                    verification_records = client.get_dns_records(zone_id, "TXT")
+                    if verification_records:
+                        match = next((r for r in verification_records if r['id'] == existing_id), None)
+                        if match and match['content'] == new_spf:
+                            res_details['spf status'] = "Updated"
+                            logger.info(f"✅ SPF Verified and Tagged for {domain}")
+                            verified = True
+                            break
+                    logger.warning(f"⚠️ SPF Verification attempt {attempt+1} failed for {domain}...")
+                
+                if not verified:
+                    if verification_records is None:
+                        res_details['spf status'] = "Updated (Verification Failed - API Timeout)"
+                        logger.warning(f"⚠️ SPF Verification skipped for {domain} due to API Timeout.")
                     else:
                         res_details['spf status'] = "Update Failed (Verification Failed)"
                         logger.error(f"❌ SPF Verification FAILED for {domain} - Content unchanged after update.")
@@ -208,16 +216,24 @@ def process_domain(client, zone, processed_set, mongo_client=None, dry_run=True)
                 comment="Updated by Automation"
             )
             if success:
-                # IMMEDIATE VERIFICATION
-                verification_records = client.get_dns_records(zone_id, "TXT")
-                if verification_records is None:
-                    res_details['dmarc status'] = "Updated (Verification Failed - API Timeout)"
-                    logger.warning(f"⚠️ DMARC Verification skipped for {domain} due to API Timeout.")
-                else:
-                    match = next((r for r in verification_records if r['id'] == existing_id), None)
-                    if match and match['content'] == new_dmarc:
-                        res_details['dmarc status'] = "Updated"
-                        logger.info(f"✅ DMARC Verified and Tagged for {domain}")
+                # IMMEDIATE VERIFICATION WITH RETRY
+                verified = False
+                for attempt in range(3):
+                    time.sleep(2) # Wait for propagation
+                    verification_records = client.get_dns_records(zone_id, "TXT")
+                    if verification_records:
+                        match = next((r for r in verification_records if r['id'] == existing_id), None)
+                        if match and match['content'] == new_dmarc:
+                            res_details['dmarc status'] = "Updated"
+                            logger.info(f"✅ DMARC Verified and Tagged for {domain}")
+                            verified = True
+                            break
+                    logger.warning(f"⚠️ DMARC Verification attempt {attempt+1} failed for {domain}...")
+
+                if not verified:
+                    if verification_records is None:
+                        res_details['dmarc status'] = "Updated (Verification Failed - API Timeout)"
+                        logger.warning(f"⚠️ DMARC Verification skipped for {domain} due to API Timeout.")
                     else:
                         res_details['dmarc status'] = "Update Failed (Verification Failed)"
                         logger.error(f"❌ DMARC Verification FAILED for {domain} - Content unchanged after update.")
@@ -239,7 +255,8 @@ def main():
     args = parser.parse_args()
     
     dry_run = not args.apply
-    report_path = args.report_name if args.report_name else config.REPORT_EXCEL_PATH
+    # Use custom name if provided, else generate timestamped one in reports/ folder
+    report_path = args.report_name if args.report_name else config.get_report_path()
     
     logger.info(f"🚀 Starting automation in {'DRY RUN' if dry_run else 'LIVE'} mode...")
     if args.domain: logger.info(f"🎯 Target domain: {args.domain}")
@@ -284,8 +301,24 @@ def main():
             page = 1
             while True:
                 # Fetch a page of zones (default 50 per page from Cloudflare)
-                zones_on_page, result_info = cf_client.fetch_page(f"{cf_client.base_url}/zones", page)
+                # Retry logic for page fetching
+                retries = 3
+                zones_on_page = None
+                result_info = None
+
+                for attempt in range(retries):
+                    zones_on_page, result_info = cf_client.fetch_page(f"{cf_client.base_url}/zones", page)
+                    if zones_on_page is not None:
+                        break
+                    logger.warning(f"⚠️ Page {page} fetch failed. Retrying ({attempt + 1}/{retries})...")
+                    time.sleep(5) # Wait before retry
+                
+                if zones_on_page is None:
+                    logger.error(f"❌ Failed to fetch page {page} after {retries} attempts. Stopping pagination safely.")
+                    break
+
                 if not zones_on_page:
+                    # Empty list means we reached the end
                     break
                 
                 # Filter out already processed domains

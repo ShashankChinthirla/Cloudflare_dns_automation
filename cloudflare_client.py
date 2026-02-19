@@ -46,6 +46,7 @@ class CloudflareClient:
             logger.error(f"API Error on page {page}: {data.get('errors')}")
         except Exception as e:
             logger.error(f"Error fetching page {page}: {e}")
+            return None, None # Return None to indicate ERROR, not just empty
         return [], {}
 
     def get_zones(self, limit=None, processed_set=None):

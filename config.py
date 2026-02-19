@@ -13,11 +13,18 @@ class Config:
     COLLECTION_NAME = "dfyinfrasetups"
 
     TRACKING_CSV_PATH = os.getenv("TRACKING_CSV_PATH", "processed_domains.csv")
-    REPORT_EXCEL_PATH = os.getenv("REPORT_EXCEL_PATH", "latest_domain_updates.xlsx")
+    REPORTS_DIR = os.getenv("REPORTS_DIR", "reports")
     LOG_FILE_PATH = os.getenv("LOG_FILE_PATH", "automation.log")
     MAX_WORKERS = int(os.getenv("MAX_WORKERS", "6"))
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", "100"))
     COOLDOWN_SLEEP = int(os.getenv("COOLDOWN_SLEEP", "15"))
+    
+    @classmethod
+    def get_report_path(cls):
+        if not os.path.exists(cls.REPORTS_DIR):
+            os.makedirs(cls.REPORTS_DIR)
+        timestamp = __import__('datetime').datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        return os.path.join(cls.REPORTS_DIR, f"domain_updates_{timestamp}.xlsx")
 
     @classmethod
     def validate(cls):
